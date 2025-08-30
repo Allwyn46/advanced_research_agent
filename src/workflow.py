@@ -18,7 +18,18 @@ class workflow:
 
 
     def _build_workflow(self):
-        pass
+        graph = StateGraph()
+        graph.add_node("extract_tools",self._extract_tools_step)
+        graph.add_node("research",self._research_step)
+        graph.add_node("analyze",self._analyze_step)
+
+        graph.set_entry_point("extract_tools")
+
+        graph.add_edge("extract_tools","research")
+        graph.add_edge("research","analyze")
+        graph.add_edge("analyze", END)
+
+        return graph.compile()
 
     def _extract_tools_step(self,state:ResearchState)->Dict[str,any]:
         print(f"Finding Articles about: {state.query}")
@@ -132,3 +143,25 @@ class workflow:
                 companies.append(company)
 
         return {"companies" : companies}
+    
+    def _analyze_step(self,state:ResearchState)->Dict[str,Any]:
+        print("Generating Recommendations")
+
+        company_data =", ".join ([
+            company.json() for company in state.companies
+        ])
+
+        messages = [
+            SystemMessage(content=self.prompts.RECOMMENDATIONS_SYSTEM),
+            HumanMessage(content=self.prompts.recommendations_user(state.query,company_data))
+        ]
+
+        response = self.llm.invoke(messages)
+
+        return {"analysis": response.content}
+    
+    def run(self,query:str)->ResearchState:
+        initialState = ResearchState(query=query)
+        final_state = self.workflow.invoke(initialState)
+
+        return ResearchState(**final_state)
